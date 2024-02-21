@@ -17,7 +17,7 @@
   "dependencies": {
     "@vendure/admin-ui-plugin": "2.1.7",
     "@vendure/asset-server-plugin": "2.1.7",
-    "@vendure/core": "2.1.7",
+    "@vendure/core": "^1.9.7",
     "@vendure/email-plugin": "2.1.7",
     "better-sqlite3": "8.7.0",
     "dotenv": "16.4.5",

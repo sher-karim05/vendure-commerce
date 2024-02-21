@@ -5,7 +5,7 @@ import {
     VendureConfig,
 } from '@vendure/core';
 import { defaultEmailHandlers, EmailPlugin } from '@vendure/email-plugin';
-import { AssetServerPlugin } from '@vendure/asset-server-plugin';
+import { AssetServerPlugin, configureS3AssetStorage } from '@vendure/asset-server-plugin';
 import { AdminUiPlugin } from '@vendure/admin-ui-plugin';
 import 'dotenv/config';
 import path from 'path';
@@ -14,7 +14,7 @@ const IS_DEV = process.env.APP_ENV === 'dev';
 
 export const config: VendureConfig = {
     apiOptions: {
-        port: +(process.env.PORT, 3000),
+        port: +(process.env.PORT || 3000),
         adminApiPath: 'admin-api',
         shopApiPath: 'shop-api',
         // The following options are useful in development mode,
@@ -22,11 +22,11 @@ export const config: VendureConfig = {
         // reasons.
         ...(IS_DEV ? {
             adminApiPlayground: {
-                settings: { 'request.credentials': 'include' },
+                settings: { 'request.credentials': 'include' } as any,
             },
             adminApiDebug: true,
             shopApiPlayground: {
-                settings: { 'request.credentials': 'include' },
+                settings: { 'request.credentials': 'include' } as any,
             },
             shopApiDebug: true,
         } : {}),
@@ -38,37 +38,54 @@ export const config: VendureConfig = {
             password: process.env.SUPERADMIN_PASSWORD,
         },
         cookieOptions: {
-          secret: process.env.COOKIE_SECRET,
+        secret: process.env.COOKIE_SECRET,
         },
     },
     dbConnectionOptions: {
-        type: 'better-sqlite3',
+        type: 'postgres',
         // See the README.md "Migrations" section for an explanation of
         // the `synchronize` and `migrations` options.
         synchronize: false,
-        migrations: [path.join(__dirname, './migrations/*.+(js|ts)')],
+        migrations: [path.join(__dirname, './migrations/*.+(ts|js)')],
         logging: false,
         database: process.env.DB_NAME,
         host: process.env.DB_HOST,
-        port: +process.env.DB_PORT,
         username: process.env.DB_USERNAME,
         password: process.env.DB_PASSWORD,
-        database: path.join(__dirname, '../vendure.sqlite'),
     },
     paymentOptions: {
         paymentMethodHandlers: [dummyPaymentHandler],
     },
     // When adding or altering custom field definitions, the database will
     // need to be updated. See the "Migrations" section in README.md.
-    customFields: {},
+    customFields: {
+        Product: [{
+            name: 'test',
+            type: 'string',
+        }]
+    },
     plugins: [
         AssetServerPlugin.init({
             route: 'assets',
             assetUploadDir: process.env.ASSET_UPLOAD_DIR || path.join(__dirname, '../static/assets'),
-            // For local dev, the correct value for assetUrlPrefix should
-            // be guessed correctly, but for production it will usually need
-            // to be set manually to match your production url.
-            assetUrlPrefix: IS_DEV ? undefined : 'https://www.my-shop.com/assets/',
+            // If the MINIO_ENDPOINT environment variable is set, we'll use
+            // Minio as the asset storage provider. Otherwise, we'll use the
+            // default local provider.
+            storageStrategyFactory: process.env.MINIO_ENDPOINT ?  configureS3AssetStorage({
+                bucket: 'vendure-assets',
+                credentials: {
+                    accessKeyId: process.env.MINIO_ACCESS_KEY,
+                    secretAccessKey: process.env.MINIO_SECRET_KEY,
+                },
+                nativeS3Configuration: {
+                    endpoint: process.env.MINIO_ENDPOINT,
+                    forcePathStyle: true,
+                    signatureVersion: 'v4',
+                    // The `region` is required by the AWS SDK even when using MinIO,
+                    // so we just use a dummy value here.
+                    region: 'eu-west-1',
+                },
+            }) : undefined,
         }),
         DefaultJobQueuePlugin.init({ useDatabaseForBuffer: true }),
         DefaultSearchPlugin.init({ bufferUpdates: false, indexStockStatus: true }),
@@ -90,9 +107,6 @@ export const config: VendureConfig = {
         AdminUiPlugin.init({
             route: 'admin',
             port: 3002,
-            adminUiConfig: {
-                apiPort: 3000,
-            },
         }),
     ],
 };
